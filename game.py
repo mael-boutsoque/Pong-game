@@ -56,3 +56,6 @@ class Game:
         self.keys = keys
     def getkeys(self):
         return self.keys
+    
+    def quit(self):
+        self.running = False

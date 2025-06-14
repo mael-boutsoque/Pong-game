@@ -7,15 +7,16 @@ class Menu:
         self.width = width
         self.height = height
         self.buttons = []
-        self.load_buttons(game.switch_2_pong, game.switch_2_parameters)
+        self.load_buttons(game.switch_2_pong, game.switch_2_parameters,game.quit)
     
     def load(self):
         pass
     
-    def load_buttons(self, start_game_function, launch_parameters_function):
+    def load_buttons(self, start_game_function, launch_parameters_function, quit_game_function):
         self.buttons.append(Button((self.width-350)//2, (self.height-60)//2 + 60, 350, 60, "Start Game",50, start_game_function,text_color=(153, 153, 255)))
         self.buttons.append(Button((self.width-350)//2, (self.height-60)//2 + 60*3, 350, 60, "Settings",50, launch_parameters_function,text_color=(153, 153, 255)))
         self.buttons.append(Label(0, (self.height-300)//2 -100, self.width, 300, "PONG",256, text_color=(255,255,255),image1="",image2=""))
+        self.buttons.append(ButtonIcon(self.width-100,self.height-100,50,50,quit_game_function,image1="images/buttons/quit1.png",image2="images/buttons/quit2.png"))
     
     def draw(self, display:pygame.Surface):
         for button in self.buttons:
@@ -36,16 +37,24 @@ class Pong:
         self.quit_function = game.switch_2_menu
         self.keys = game.keys
         self.load()
+        self.load_images("images/buttons/bg.png")
+    
+    def load_images(self,path):
+        self.bg = pygame.image.load(path)
     
     def load(self):
         player_width , player_height = 30,100
         self.player = Player(20,(self.width)//2-player_height,player_width,player_height,(0,self.height),keys=self.keys)
+        self.enemy = Enemy(self.width-player_width-20,(self.width)//2-player_height,player_width,player_height,(0,self.height))
         
         self.ball = Ball(self.width//2,self.height//2,5,(0,self.width),(0,self.height))
 
     def draw(self, display:pygame.Surface):
+        display.blit(self.bg,(0,min(0,self.ball.get_BouncesPlayer() + self.height - self.bg.get_height())))
         self.ball.draw(display)
-        self.player.draw(display)
+        ball_pos = self.ball.get_pos()
+        self.player.draw(display,ball_pos)
+        self.enemy.draw(display,ball_pos)
     
     def events(self, event:pygame.event.Event):
         if event.type == pygame.KEYDOWN:
@@ -55,7 +64,7 @@ class Pong:
         self.player.events(event)
     
     def run(self):
-        self.ball.run(self.player)
+        self.ball.run(self.player,self.enemy)
 
 
 class Parameters:
@@ -118,7 +127,7 @@ class Parameters:
 
 
 class Player:
-    def __init__(self,x,y,width,height,limity:tuple,keys:dict):
+    def __init__(self,x,y,width,height,limity:tuple,keys:dict,images:str="images/buttons/plateforme all2.png"):
         self._x = x
         self._y = y
         self._width = width
@@ -128,10 +137,38 @@ class Player:
         self._speed = 3
         self.keyUp = keys["up"]
         self.keyDown = keys["down"]
+        self.lifes0 = 4
+        self.lifes = self.lifes0
+        self.load_images(images,5)
+        self.load_hearts()
     
-    def draw(self,display):
-        pygame.draw.rect(display,(255,0,0),pygame.Rect(self._x,self._y,self._width,self._height))
-        self._y = min(max(self._y + self._dy,self._limity[0]),self._limity[1]-self._height)
+    def load_images(self,path,nb_states):
+        self.sprites = []
+        sprite_sheet = pygame.image.load(path).convert_alpha()
+        sprite_width = 32
+        sprite_height = 80
+        for i in range(nb_states):
+            rect = pygame.Rect(i * sprite_width, 0, sprite_width, sprite_height)
+            image = sprite_sheet.subsurface(rect)
+            image = pygame.transform.scale(image, (self._width, self._height))
+            self.sprites.append(image)
+    
+    def load_hearts(self,path1="images/buttons/heart1.png",path0="images/buttons/heart0.png"):
+        width,height = 23,20
+        self.heart1 = pygame.image.load(path1)
+        self.heart1 = pygame.transform.scale(self.heart1, (width,height))
+        self.heart0 = pygame.image.load(path0)
+        self.heart0 = pygame.transform.scale(self.heart0, (width,height))
+    
+    def draw(self,display:pygame.Surface,ball_pos:tuple):
+        #pygame.draw.rect(display,(255,0,0),pygame.Rect(self._x,self._y,self._width,self._height))
+        display.blit(self.sprites[self.lifes0-self.lifes],(self._x,self._y))
+        self.run(ball_pos)
+        y = display.get_height() - 30
+        for i in range(self.lifes+1):
+            display.blit(self.heart1,(10+30*i,y))
+        for j in range(self.lifes+1,self.lifes0+1):
+            display.blit(self.heart0,(10+30*j,y))
     
     def events(self,event:pygame.event.Event):
         if event.type == pygame.KEYDOWN:
@@ -148,6 +185,40 @@ class Player:
     
     def get_rect(self)->pygame.Rect:
         return pygame.Rect(self._x,self._y,self._width,self._height)
+    
+    def run(self,ball_pos:tuple):
+        self._y = min(max(self._y + self._dy,self._limity[0]),self._limity[1]-self._height)
+    
+    def damage(self,amount=1):
+        if self.lifes == 0 and amount >0 :
+            print("perdu")
+        self.lifes = max(0,self.lifes-amount)
+        print("damage",amount)
+
+class Enemy(Player):
+    def __init__(self, x, y, width, height, limity: tuple,images:str="images/buttons/plateforme enemy.png"):
+        self._x = x
+        self._y = y
+        self._width = width
+        self._height = height
+        self._dx,self._dy = 0,0
+        self._limity = limity
+        self._speed = 3
+        self.load_images(images,1)
+        
+    def event(self,event:pygame.event.Event):
+        pass
+    def run(self,ball_pos:tuple):
+        go_up = self._y + 10 < ball_pos[1]
+        go_down = self._y + self._height - 10 > ball_pos[1]
+        if go_up or go_down:
+            self._dy = self._speed * (go_up - go_down)
+        self._y = min(max(self._y + self._dy,self._limity[0]),self._limity[1]-self._height)
+    
+    def draw(self,display:pygame.Surface,ball_pos:tuple):
+        #pygame.draw.rect(display,(255,0,0),pygame.Rect(self._x,self._y,self._width,self._height))
+        display.blit(self.sprites[0],(self._x,self._y))
+        self.run(ball_pos)
 
 class Ball:
     def __init__(self,x,y,radius,limitx:tuple,limity:tuple):
@@ -158,32 +229,44 @@ class Ball:
         self._limity = limity
         self._limitx = limitx
         self._speed = 3
+        self.bouncePlayer = 0
     
-    def move(self,player:Player):
+    def move(self,player:Player,enemy:Enemy):
         oldx = self._x
         oldy = self._y
         self._x = min(max(self._x + self._speed * cos(self._angle),self._limitx[0]),self._limitx[1])
         self._y = min(max(self._y + self._speed * sin(self._angle),self._limity[0]),self._limity[1])
         
-        player_rect = player.get_rect()
-        if player_rect.clipline(oldx,oldy,self._x,self._y):
-            self._x,self._y = oldx,oldy
-            
-            if self._x > player_rect.right -1 or self._x < player_rect.left+1:
-                self._angle  -= pi + 2*self._angle + 0.2*random()
-            
-            if self._y > player_rect.top -1 or self._y < player_rect.bottom+1:
-                self._angle = -self._angle
-                
+        if self._x < 1 and abs(self._angle)>pi/2:
+            player.damage()
         
+        players = [player.get_rect(),enemy.get_rect()]
+        for player_rect in players:
+            if player_rect.clipline(oldx,oldy,self._x,self._y):
+                self._x,self._y = oldx,oldy
+                
+                if self._x > player_rect.right -1 or self._x < player_rect.left+1:
+                    self._angle  -= pi + 2*self._angle + 0.2*random()
+                    self.bouncePlayer += 1
+                
+                if self._y > player_rect.top -1 or self._y < player_rect.bottom+1:
+                    self._angle = -self._angle
+                    self.bouncePlayer += 1
+                
         self._angle -= (pi + 2*self._angle + 0.2*random())*(self._x >= self._limitx[1] or self._x <= self._limitx[0])
         self._angle = (1-2*(self._y >= self._limity[1] or self._y <= self._limity[0]))*self._angle
     
-    def run(self,player):
-        self.move(player)
+    def run(self,player:Player,enemy:Enemy):
+        self.move(player,enemy)
     
     def draw(self,display):
         pygame.draw.circle(display,(255,255,255),(self._x,self._y),self._radius)
+    
+    def get_pos(self) -> tuple[int,int]:
+        return (self._x,self._y)
+    
+    def get_BouncesPlayer(self) -> int :
+        return self.bouncePlayer
         
 
 class Label:
