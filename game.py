@@ -16,6 +16,7 @@ class Game:
         self.parameters = Parameters(width, height, self)
         self.menu = Menu(width, height, self)
         self.pong = Pong(width, height, self)
+        self.death_screen = DeathScreen(width,height,self)
         
         self.active = self.menu
 
@@ -31,8 +32,12 @@ class Game:
     
     def update(self):
         for event in pygame.event.get():
+            if event.type == pygame.KEYDOWN:
+                if event.key == 1073741922:
+                    print(self.pong.player.effects)
             if event.type == pygame.QUIT:
-                self.running = False
+                pass
+                #self.running = False
             else :
                 self.active.events(event)
     
@@ -44,12 +49,14 @@ class Game:
     def switch_2_menu(self):
         self.active = self.menu
         self.active.load()
-    
     def switch_2_pong(self):
         self.active = self.pong
         self.active.load()
     def switch_2_parameters(self):
         self.active = self.parameters
+        self.active.load()
+    def switch_2_death_screen(self):
+        self.active = self.death_screen
         self.active.load()
     
     def setkeys(self,keys:dict):
