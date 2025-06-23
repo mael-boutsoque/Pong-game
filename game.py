@@ -61,6 +61,8 @@ class Game:
     
     def setkeys(self,keys:dict):
         self.keys = keys
+        self.pong.change_keys(self.keys)
+    
     def getkeys(self):
         return self.keys
     

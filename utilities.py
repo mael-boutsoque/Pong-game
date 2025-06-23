@@ -1,10 +1,11 @@
 from abc import abstractmethod
+from io import TextIOWrapper
 from typing import Any
 import pygame
 from math import cos, sin, atan2, pi, log
 from random import random
 from time import monotonic
-from random import choice
+from random import choice, random
 
 class Menu:
     def __init__(self, width, height, game):
@@ -47,6 +48,9 @@ class Pong:
     def load_images(self,path):
         self.bg = pygame.image.load(path)
     
+    def change_keys(self,keys):
+        self.keys = keys
+    
     def load(self):
         player_width , player_height = 30,100
         self.player = Player(20,(self.width)//2-player_height,player_width,player_height,(0,self.height),keys=self.keys)
@@ -75,7 +79,8 @@ class Pong:
     def run(self):
         spawn_power = self.ball.run(self.player,self.enemy)
         effect = choice(self.disponible_powers)
-        if spawn_power : self.powers.append(Power(self.ball._x,self.ball._y,effect))
+        if spawn_power and random()>0.5 :
+            self.powers.append(Power(self.ball._x,self.ball._y,effect))
         
         for index,power in enumerate(self.powers):
             if not power.run(self.player):
@@ -97,7 +102,8 @@ class Parameters:
         self.load_buttons(game.switch_2_menu)
     
     def load(self):
-        pass
+        self.load_parameters_file()
+        self.load_parameters()
     
     def load_buttons(self, return_home_function):
         self.buttons.append(Button((self.width-350)//2, (self.height-60)//2 + 60, 350, 60, "Up : ",50, self.want_change_keyUp ,text_color=(153, 153, 255)))
@@ -116,6 +122,7 @@ class Parameters:
     def change_key(self,key:str,result):
         keys = self.game_get_key()
         keys[key] = result
+        self.change_parameter(key,result)
     
     def draw(self, display:pygame.Surface):
         keyboard = self.game_get_key()
@@ -137,7 +144,7 @@ class Parameters:
             for button in self.buttons:
                 button.events(event)
         
-        if not self.wait_key_for is None and event.type == pygame.KEYDOWN:
+        if self.wait_key_for is not None and event.type == pygame.KEYDOWN:
             if not event.key == pygame.K_ESCAPE:
                 self.change_key(self.wait_key_for,event.key)
             
@@ -146,6 +153,39 @@ class Parameters:
     
     def run(self):
         pass
+    
+    def load_parameters_file(self,file_path:str="parameters.txt"):
+        self.file_path = file_path
+        open(file_path)
+        print("file loaded")
+    
+    @staticmethod
+    def convert_file_2_dict(file_path:str)->dict:
+        file = open(file_path)
+        rfile = file.read()
+        rfile = rfile.split('\n')
+        keys = {}
+        for text in rfile:
+            liste = text.split('=')
+            keys[liste[0]] = int(liste[1])
+        file.close()
+        return keys
+    
+    def load_parameters(self):
+        keys = self.convert_file_2_dict(self.file_path)
+        self.game_change_key(keys)
+    
+    def change_parameter(self,key,result):
+        keys = self.convert_file_2_dict(self.file_path)
+        keys[key] = result
+        key_list = list(keys.keys())
+        text = ""
+        for key in key_list:
+            text += f"{key}={keys[key]}\n"
+        file = open(self.file_path,"w")
+        file.write(text[:-1])
+        file.close()
+        
 
 
 class DeathScreen:
