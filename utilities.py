@@ -271,11 +271,8 @@ class Host:
         self.close_event = threading.Event()
         self.receive_queue = queue.Queue()
         self.send_queue = queue.Queue()
-        self.socket_queue = queue.Queue()
-        self.thread_conn = threading.Thread(target=Host.thread_host, args=(self.receive_queue,self.send_queue,self.socket_queue,self.close_event))
-        self.thread = threading.Thread(target=Host.connection, args=(HOST,PORT,self.socket_queue,self.close_event))
+        self.thread_conn = threading.Thread(target=Host.thread_host, args=(HOST,PORT,self.receive_queue,self.send_queue,self.close_event))
         log.info("host menu loaded")
-        self.thread.start()
         self.thread_conn.start()
     
     def load_buttons(self):
@@ -312,28 +309,20 @@ class Host:
             self.receive = self.receive_queue.get_nowait()
         except queue.Empty:
             pass
-            
+    
     
     @staticmethod
-    def connection(HOST,PORT,socket_queue,close_event:threading.Event):
+    def thread_host(HOST,PORT, receive_queue: queue.Queue, send_queue: queue.Queue, close_event: threading.Event):
         log.info("connection start : host")
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.bind((HOST, PORT))
-        server_socket.listen(5)
-        recei , addr = server_socket.accept()
-        socket_queue.put((recei, addr, server_socket))
-        log.info("connection start finished")
-    
-    @staticmethod
-    def thread_host(receive_queue: queue.Queue, send_queue: queue.Queue, socket_queue: queue.Queue, close_event: threading.Event):
-
-        log.info("wait for connection to be obtained")
-        connection, address, socket_host = socket_queue.get()
-        log.info("connection obtained from 'connection start' process")
-
+        receive_queue.put("waiting")
+        socket_host = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        socket_host.bind((HOST, PORT))
+        socket_host.listen(5)
+        connection , address = socket_host.accept()
         connection.settimeout(0.5)
+        log.info("connection start finished")
+        
         i = 0
-
         while not close_event.is_set():
             i += 1
 
@@ -343,11 +332,11 @@ class Host:
                 if data:
                     message = data.decode('utf-8')
                     receive_queue.put(message)
-                    log.debug(f"Received from client: {message}")
             except socket.timeout:
                 pass
             except (ConnectionResetError, OSError) as e:
                 log.warning(f"Connection error during recv: {e}")
+                receive_queue.put("receive error")
                 break
 
             # send
@@ -356,10 +345,12 @@ class Host:
                 connection.sendall(msg)
             except (ConnectionResetError, OSError) as e:
                 log.warning(f"Connection error during send: {e}")
+                receive_queue.put("send error")
                 break
             
-            sleep(1)
+            sleep(0.5)
 
+        receive_queue.put("disconnected")
         log.info("thread_host terminated")
         connection.close()
         socket_host.close()
@@ -379,15 +370,12 @@ class Join:
         self.load_buttons()
     
     def load(self):
-        HOST = '127.0.0.1'
+        HOST = 'localhost'
         PORT = 5000
         self.close_event = threading.Event()
-        self.socket_queue = queue.Queue()
         self.message_queue = queue.Queue()
-        self.thread = threading.Thread(target=Join.connection, args=(HOST,PORT,self.socket_queue,self.close_event))
-        self.tread_conn = threading.Thread(target=Join.thread_connection, args=(self.message_queue,self.socket_queue,self.close_event))
+        self.tread_conn = threading.Thread(target=Join.thread_connection, args=(HOST, PORT, self.message_queue,self.close_event))
         log.info("join menu loaded")
-        self.thread.start()
         self.tread_conn.start()
     
     def load_buttons(self):
@@ -429,32 +417,30 @@ class Join:
     
     
     @staticmethod
-    def connection(HOST,PORT,socket_queue:queue.Queue, stop_event: threading.Event):
+    def thread_connection(HOST, PORT, message_queue: queue.Queue, stop_event: threading.Event):
         log.info("connection start : join")
+        message_queue.put("waiting")
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        
         while not stop_event.is_set():
             try:
                 client_socket.connect((HOST, PORT))
-                client_socket.sendall(b"Hello from client")
-                socket_queue.put(client_socket)
                 log.info("connection start finished")
+                message_queue.put("connected")
                 break
             except:
                 log.warning("connection start failed")
+                message_queue.put("no host")
+                stop_event.set()
         
+        client_socket.settimeout(0.5)
         if stop_event.is_set():
             client_socket.close()
-    
-    @staticmethod
-    def thread_connection(message_queue: queue.Queue, socket_queue: queue.Queue, stop_event: threading.Event):
-        log.info("wait for connection to be obtained")
-        client_socket: socket.socket = socket_queue.get()
-        log.info("connection obtained from 'connection start' process")
-        client_socket.settimeout(0.5)  # Timeout pour ne pas bloquer indéfiniment
 
         i = 0
         while not stop_event.is_set():
             i += 1
+            # receive
             try:
                 data = client_socket.recv(1024)
                 if data:
@@ -464,6 +450,7 @@ class Join:
                 continue
             except (ConnectionResetError, OSError) as e:
                 log.warning(f"Connection error: {e}")
+                message_queue.put("receive error")
                 break
             
              # send
@@ -472,6 +459,7 @@ class Join:
                 client_socket.sendall(msg)
             except (ConnectionResetError, OSError) as e:
                 log.warning(f"Connection error during send: {e}")
+                message_queue.put("send error")
                 break
             
             sleep(0.5)
