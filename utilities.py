@@ -1,27 +1,47 @@
 from abc import abstractmethod
 from io import TextIOWrapper
+import logging
 from typing import Any
 import pygame
-from math import cos, sin, atan2, pi, log
+from math import cos, sin, atan2, pi, log as log10
 from random import random
 from time import monotonic
 from random import choice, random
+import socket
+import threading
+import queue
+
+#logs
+from logger_config import setup_logger
+log = setup_logger("client")
+"""
+log.debug("")
+log.info("")
+log.warning("")
+log.error("")
+log.critical("")
+"""
 
 class Menu:
     def __init__(self, width, height, game):
         self.width = width
         self.height = height
         self.buttons = []
-        self.load_buttons(game.switch_2_pong, game.switch_2_parameters,game.quit)
+        self.load_buttons(game.switch_2_pong, game.switch_2_parameters,game.switch_2_multiplayer ,game.quit)
     
     def load(self):
-        pass
+        log.info("menu loaded")
     
-    def load_buttons(self, start_game_function, launch_parameters_function, quit_game_function):
-        self.buttons.append(Button((self.width-350)//2, (self.height-60)//2 + 60, 350, 60, "Start Game",50, start_game_function,text_color=(153, 153, 255)))
-        self.buttons.append(Button((self.width-350)//2, (self.height-60)//2 + 60*3, 350, 60, "Settings",50, launch_parameters_function,text_color=(153, 153, 255)))
-        self.buttons.append(Label(0, (self.height-300)//2 -100, self.width, 300, "PONG",256, text_color=(255,255,255),image1="",image2=""))
-        self.buttons.append(ButtonIcon(self.width-100,self.height-100,50,50,quit_game_function,image1="images/buttons/quit1.png",image2="images/buttons/quit2.png"))
+    def load_buttons(self, start_game_function, launch_parameters_function, start_multiplayer_function, quit_game_function):
+        width = self.width // 2.5
+        height = self.height // 10
+        font_size = height
+        self.buttons.append(Button((self.width-width)//2, (self.height-height)//2 + (height+30)*0, width, height, "Start Game",font_size, start_game_function,text_color=(153, 153, 255)))
+        self.buttons.append(Button((self.width-width)//2, (self.height-height)//2 + (height+30)*1, width, height, "Multiplayer",font_size, start_multiplayer_function,text_color=(153, 153, 255)))
+        self.buttons.append(Button((self.width-width)//2, (self.height-height)//2 + (height+30)*2, width, height, "Settings",font_size, launch_parameters_function,text_color=(153, 153, 255)))
+        self.buttons.append(Label(0, 0, self.width, (self.height-height)//2 + (height+20)*0, "PONG",(self.height-height)//2 + (height+20)*0, text_color=(255,255,255),image1="",image2=""))
+        size = self.width // 20
+        self.buttons.append(ButtonIcon(self.width-size*2,self.height-size*2,size,size,quit_game_function,image1="images/buttons/quit1.png",image2="images/buttons/quit2.png"))
     
     def draw(self, display:pygame.Surface):
         for button in self.buttons:
@@ -59,6 +79,7 @@ class Pong:
         self.ball = Ball(self.width//2,self.height//2,5,(0,self.width),(0,self.height))
         self.disponible_powers = [Effect_big,Effect_speed]
         self.powers = []
+        log.info("Pong loaded")
 
     def draw(self, display:pygame.Surface):
         display.blit(self.bg,(0,min(0,self.ball.get_BouncesPlayer() + self.height - self.bg.get_height())))
@@ -72,6 +93,7 @@ class Pong:
     def events(self, event:pygame.event.Event):
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
+                log.info("quit Pong")
                 self.quit_function()
         
         self.player.events(event)
@@ -104,12 +126,17 @@ class Parameters:
     def load(self):
         self.load_parameters_file()
         self.load_parameters()
+        log.info("parameters loaded")
     
     def load_buttons(self, return_home_function):
-        self.buttons.append(Button((self.width-350)//2, (self.height-60)//2 + 60, 350, 60, "Up : ",50, self.want_change_keyUp ,text_color=(153, 153, 255)))
-        self.buttons.append(Button((self.width-350)//2, (self.height-60)//2 + 60*3, 350, 60, "Down : ",50, self.want_change_keyDown,text_color=(153, 153, 255)))
-        self.buttons.append(Label(0, 0, self.width, 130, "parameters",128, text_color=(255,255,255),image1="",image2=""))
-        self.buttons.append(ButtonIcon(self.width-50,self.height-50,30,30,return_home_function))
+        width = self.width // 2.5
+        height = self.height // 10
+        font_size = height
+        self.buttons.append(Button((self.width-width)//2, (self.height-height)//2 + (height+30)*0, width, height, "Up : ",font_size, self.want_change_keyUp ,text_color=(153, 153, 255)))
+        self.buttons.append(Button((self.width-width)//2, (self.height-height)//2 + (height+30)*1, width, height, "Down : ",font_size, self.want_change_keyDown,text_color=(153, 153, 255)))
+        self.buttons.append(Label(0, 0, self.width, height*2, "parameters",height*2, text_color=(255,255,255),image1="",image2=""))
+        size = self.width // 20
+        self.buttons.append(ButtonIcon(self.width-size*2,self.height-size*2,size,size,return_home_function))
         self.buttons_wait_key = Label(100, (self.height-200)//2, self.width-200, 200, "Select a key",100, text_color=(153,153,255))
     
     def want_change_keyUp(self):
@@ -149,15 +176,17 @@ class Parameters:
                 self.change_key(self.wait_key_for,event.key)
             
             self.wait_key_for = None
-            print("keys :",self.game_get_key())
     
     def run(self):
         pass
     
     def load_parameters_file(self,file_path:str="parameters.txt"):
-        self.file_path = file_path
-        open(file_path)
-        print("file loaded")
+        try:
+            self.file_path = file_path
+            open(file_path)
+            log.info("keys file loaded")
+        except:
+            log.warning("error during keys file loading")
     
     @staticmethod
     def convert_file_2_dict(file_path:str)->dict:
@@ -178,6 +207,7 @@ class Parameters:
     def change_parameter(self,key,result):
         keys = self.convert_file_2_dict(self.file_path)
         keys[key] = result
+        log.info(f"key changed {key} -> {result}")
         key_list = list(keys.keys())
         text = ""
         for key in key_list:
@@ -185,7 +215,229 @@ class Parameters:
         file = open(self.file_path,"w")
         file.write(text[:-1])
         file.close()
+        log.info("keys file modified")
+
+
+class Multiplayer:
+    def __init__(self, width, height, game):
+        self.width = width
+        self.height = height
+        self.buttons = []
+        self.load_buttons(game.switch_2_menu,game.switch_2_host,game.switch_2_join)
+    
+    def load(self):
+        log.info("Multiplayer menu loaded")
+    
+    def load_buttons(self, return_home_function,launch_host_function,launch_join_function):
+        width = 200
+        heigth = 100
+        middle = (self.width-width)//2
+        self.buttons.append(Button(middle + width, (self.height-60)//2, width, heigth, "Host",50, launch_host_function,text_color=(153, 153, 255)))
+        self.buttons.append(Button(middle - width, (self.height-60)//2, width, heigth, "Join",50, launch_join_function,text_color=(153, 153, 255)))
+        self.buttons.append(Label(0, 0, self.width, 200, "Multiplayer",128, text_color=(255,255,255),image1="",image2=""))
+        size = self.width // 20
+        self.buttons.append(ButtonIcon(self.width-size*2,self.height-size*2,size,size,return_home_function))
+    
+    def draw(self, display:pygame.Surface):
+        for button in self.buttons:
+            button.draw(display)
+
+    def events(self, event:pygame.event.Event):
+        for button in self.buttons:
+            button.events(event)
+    
+    def run(self):
+        pass
+
+
+class Host:
+    def __init__(self, width, height, game):
+        self.width = width
+        self.height = height
+        self.buttons = []
+        self.conn = None
+        self.recei, self.addr, self.server_socket = None , None, None
+        self.connected = False
+        self.receive = ""
+        self.i = 0
+        self.dots = 0
+        self.dot_time = monotonic()
+        self.return_home = game.switch_2_menu
+        self.load_buttons()
+    
+    def load(self):
+        self.i = 0
+        HOST = '0.0.0.0'
+        PORT = 5000
+        self.socket_queue = queue.Queue()
+        self.thread = threading.Thread(target=Host.connection, args=(HOST,PORT,self.socket_queue))
+        log.info("host menu loaded")
+        self.thread.start()
+    
+    def load_buttons(self):
+        self.buttons.append(Label(0, (self.height-200)//2, self.width, 200, "Wait for player",50, text_color=(255,255,255),image1="",image2=""))
+        self.buttons.append(Label(0, 0, self.width, 200, "Host",128, text_color=(255,255,255),image1="",image2=""))
+        self.buttons.append(ButtonIcon(self.width-100,self.height-100,50,50,self.quit))
+    
+    def quit(self):
+        if self.recei is not None:
+            self.recei.close()
+        if self.conn is not None:
+            self.conn.close()
+        if self.server_socket is not None:
+            self.server_socket.close()
+        self.recei, self.addr, self.server_socket = None , None, None
+        log.info("quit host")
+        self.return_home()
+    
+    def draw(self, display:pygame.Surface):
+        for i,button in enumerate(self.buttons):
+            if(i==0):
+                if self.addr is None:
+                    button.draw(display,'.'*self.dots)
+                else:
+                    button.draw(display," : "+self.receive)
+            else:
+                button.draw(display)
+    
+    def events(self, event:pygame.event.Event):
+        for button in self.buttons:
+            button.events(event)
+    
+    def run(self):
+        self.i += 1
+        if self.dot_time + 1 < monotonic():
+            self.dot_time = monotonic()
+            self.dots = (self.dots+1)%4
         
+        if self.recei is None:
+
+            try:
+                self.recei, self.addr, self.server_socket = self.socket_queue.get(timeout=0)
+                log.info("connection start finished")
+            except:
+                log.warning("connection start failed")
+
+        else:
+            try:
+                self.recei.sendall(b"connected" + str(self.i).encode('utf-8'))
+            except (socket.error, socket.timeout, ConnectionResetError, ConnectionAbortedError, ConnectionRefusedError) as e:
+                self.receive = "disconnected"
+                log.error(f"Erreur de connexion : {e}")
+            
+    
+    @staticmethod
+    def connection(HOST,PORT,socket_queue):
+        log.info("connection start : host")
+        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_socket.bind((HOST, PORT))
+        server_socket.listen(5)
+        recei , addr = server_socket.accept()
+        socket_queue.put((recei, addr, server_socket))
+        log.info("connection start finished")
+    
+    @staticmethod
+    def thread_host(recei , addr):
+        pass
+
+
+
+class Join:
+    def __init__(self, width, height, game):
+        self.width = width
+        self.height = height
+        self.buttons = []
+        self.message = ""
+        self.dots = 0
+        self.dot_time = monotonic()
+        self.return_home = game.switch_2_menu
+        self.load_buttons()
+    
+    def load(self):
+        HOST = '127.0.0.1'
+        PORT = 5000
+        self.close_event = threading.Event()
+        self.socket_queue = queue.Queue()
+        self.message_queue = queue.Queue()
+        self.thread = threading.Thread(target=Join.connection, args=(HOST,PORT,self.socket_queue,self.close_event))
+        self.tread_conn = threading.Thread(target=Join.thread_connection, args=(self.message_queue,self.socket_queue,self.close_event))
+        log.info("join menu loaded")
+        self.thread.start()
+        self.tread_conn.start()
+    
+    def load_buttons(self):
+        self.buttons.append(Label(0, (self.height-200)//2, self.width, 200, "Wait for server",50, text_color=(255,255,255),image1="",image2=""))
+        self.buttons.append(Label(0, 0, self.width, 200, "Join",128, text_color=(255,255,255),image1="",image2=""))
+        self.buttons.append(ButtonIcon(self.width-100,self.height-100,50,50,self.quit))
+    
+    def quit(self):
+        self.close_event.set()
+        log.info("quit join")
+        self.return_home()
+    
+    def draw(self, display:pygame.Surface):
+        for i,button in enumerate(self.buttons):
+            if(i==0):
+                button.draw(display," : "+self.message)
+            else:
+                button.draw(display)
+    
+    def events(self, event:pygame.event.Event):
+        for button in self.buttons:
+            button.events(event)
+    
+    def run(self):
+        if self.dot_time + 1 < monotonic():
+            self.dot_time = monotonic()
+            self.dots = (self.dots+1)%4
+        
+        try:
+            self.message = self.message_queue.get_nowait()
+            #log.debug(f"message : {self.message}")
+        except queue.Empty:
+            #log.warning(f"no message")
+            pass
+            
+    
+    
+    @staticmethod
+    def connection(HOST,PORT,socket_queue:queue.Queue, stop_event: threading.Event):
+        log.info("connection start : join")
+        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        while not stop_event.is_set():
+            try:
+                client_socket.connect((HOST, PORT))
+                client_socket.sendall(b"Hello from client")
+                socket_queue.put(client_socket)
+                log.info("connection start finished")
+                break
+            except:
+                log.warning("connection start failed")
+        
+        if stop_event.is_set():
+            client_socket.close()
+    
+    @staticmethod
+    def thread_connection(message_queue: queue.Queue, socket_queue: queue.Queue, stop_event: threading.Event):
+        log.info("wait for connection to be established")
+        client_socket: socket.socket = socket_queue.get()
+        log.info("connection obtained from 'connection start' process")
+        client_socket.settimeout(0.5)  # Timeout pour ne pas bloquer indéfiniment
+
+        while not stop_event.is_set():
+            try:
+                data = client_socket.recv(1024)
+                if data:
+                    message = data.decode('utf-8')
+                    message_queue.put(message)
+            except socket.timeout:
+                continue
+            except (ConnectionResetError, OSError) as e:
+                log.warning(f"Connection error: {e}")
+                break
+        log.info("thread_connection terminated")
+        client_socket.close()
+
 
 
 class DeathScreen:
@@ -197,7 +449,7 @@ class DeathScreen:
         self.load_buttons(self.home_function)
     
     def load(self):
-        pass
+        log.info("DeathScreen loaded")
     
     def load_buttons(self, return_home_function):
         self.buttons.append(Button((self.width-350)//2, (self.height-60)//2 + 60, 350, 60, "Return Home",50, return_home_function,text_color=(153, 153, 255)))
@@ -285,14 +537,13 @@ class Player:
     
     def damage(self,amount=1):
         self.lifes -= amount
-        print("damage",amount)
+        log.info("damage",amount)
     
     def add_effect(self,effect):
-        print("effect :",effect)
+        log.info(f"add effect : {effect}")
         if effect is not None:
             self.effects.append(effect)
             effect.apply(self)
-        print(self.effects)
     
     def move(self,x:int|None=None,y:int|None=None,width:int|None=None,height:int|None=None):
         self._x = x or self._x
@@ -301,7 +552,7 @@ class Player:
         self._height = height or self._height
         if width is not None or height is not None:
             self.resize_images()
-            print("resize")
+            log.info("resize player")
     
     def resize_images(self):
         for i,image in enumerate(self.sprites):
@@ -447,13 +698,13 @@ class Ball:
                 if abs(self._x - player_rect.left) < 5 or abs(self._x - player_rect.right) < 5:
                     self._angle = pi - self._angle + 0.2 * (random() - 0.5)
                     self.bouncePlayer += 1
-                    self._speed = max(self._speed,log(self.bouncePlayer))
+                    self._speed = max(self._speed,log10(self.bouncePlayer))
                     collide_player = player
 
                 elif abs(self._y - player_rect.top) < 5 or abs(self._y - player_rect.bottom) < 5:
                     self._angle = -self._angle + 0.2 * (random() - 0.5)
                     self.bouncePlayer += 1
-                    self._speed = max(self._speed,log(self.bouncePlayer))
+                    self._speed = max(self._speed,log10(self.bouncePlayer))
                     collide_player = player
                 
         self._angle -= (pi + 2*self._angle + 0.2*random())*(self._x >= self._limitx[1] or self._x <= self._limitx[0])
@@ -490,6 +741,7 @@ class Label:
         self.font = pygame.font.Font("ThaleahFat.ttf", text_size)
         self.image1 = self.load_image(image1)
         self.image2 = self.load_image(image2)
+        self.too_small = False
         self.update_draw()
     
     def move(self, x=None, y=None, width=None, height=None, text=None, text_size=None, text_color=None):
@@ -537,8 +789,10 @@ class Label:
         text_size = text_surface.get_size()
 
         if text_size[0] > self._width or text_size[1] > self._height:
-            print(f"Warning: Text size exceeds button size, resizing button to ({text_size[0] + 20},{text_size[1] + 10})")
-            self.move(self._x+(self._width-text_size[0] + 10),self._y+(self._height-text_size[1] + 20),text_size[0] + 20, text_size[1] + 10)
+            if not self.too_small:
+                log.warning(f"Warning: Text size exceeds button size, resizing button to ({text_size[0] + 20},{text_size[1] + 10})")
+                self.too_small = True
+            #self.move(self._x+(self._width-text_size[0] + 10),self._y+(self._height-text_size[1] + 20),text_size[0] + 20, text_size[1] + 10)
         
         else:
             self.image.blit(text_surface, text_rect)
