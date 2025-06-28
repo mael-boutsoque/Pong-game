@@ -1,5 +1,5 @@
 import logging
-import colorlog
+import colorlog # type: ignore
 
 def setup_logger(name='app', level=logging.DEBUG, log_file='app.log'):
     logger = logging.getLogger(name)

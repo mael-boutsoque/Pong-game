@@ -10,6 +10,7 @@ from random import choice, random
 import socket
 import threading
 import queue
+from time import sleep
 
 #logs
 from logger_config import setup_logger
@@ -255,8 +256,6 @@ class Host:
         self.width = width
         self.height = height
         self.buttons = []
-        self.conn = None
-        self.recei, self.addr, self.server_socket = None , None, None
         self.connected = False
         self.receive = ""
         self.i = 0
@@ -269,34 +268,33 @@ class Host:
         self.i = 0
         HOST = '0.0.0.0'
         PORT = 5000
+        self.close_event = threading.Event()
+        self.receive_queue = queue.Queue()
+        self.send_queue = queue.Queue()
         self.socket_queue = queue.Queue()
-        self.thread = threading.Thread(target=Host.connection, args=(HOST,PORT,self.socket_queue))
+        self.thread_conn = threading.Thread(target=Host.thread_host, args=(self.receive_queue,self.send_queue,self.socket_queue,self.close_event))
+        self.thread = threading.Thread(target=Host.connection, args=(HOST,PORT,self.socket_queue,self.close_event))
         log.info("host menu loaded")
         self.thread.start()
+        self.thread_conn.start()
     
     def load_buttons(self):
         self.buttons.append(Label(0, (self.height-200)//2, self.width, 200, "Wait for player",50, text_color=(255,255,255),image1="",image2=""))
+        self.buttons.append(Label(0, self.height-100, self.width, 100, "debug : ",20, text_color=(255,255,255),image1="",image2=""))
         self.buttons.append(Label(0, 0, self.width, 200, "Host",128, text_color=(255,255,255),image1="",image2=""))
         self.buttons.append(ButtonIcon(self.width-100,self.height-100,50,50,self.quit))
     
     def quit(self):
-        if self.recei is not None:
-            self.recei.close()
-        if self.conn is not None:
-            self.conn.close()
-        if self.server_socket is not None:
-            self.server_socket.close()
-        self.recei, self.addr, self.server_socket = None , None, None
+        self.close_event.set()
         log.info("quit host")
         self.return_home()
     
     def draw(self, display:pygame.Surface):
         for i,button in enumerate(self.buttons):
             if(i==0):
-                if self.addr is None:
-                    button.draw(display,'.'*self.dots)
-                else:
-                    button.draw(display," : "+self.receive)
+                button.draw(display,"."*self.dots)
+            elif(i==1):
+                button.draw(display,self.receive)
             else:
                 button.draw(display)
     
@@ -310,24 +308,14 @@ class Host:
             self.dot_time = monotonic()
             self.dots = (self.dots+1)%4
         
-        if self.recei is None:
-
-            try:
-                self.recei, self.addr, self.server_socket = self.socket_queue.get(timeout=0)
-                log.info("connection start finished")
-            except:
-                log.warning("connection start failed")
-
-        else:
-            try:
-                self.recei.sendall(b"connected" + str(self.i).encode('utf-8'))
-            except (socket.error, socket.timeout, ConnectionResetError, ConnectionAbortedError, ConnectionRefusedError) as e:
-                self.receive = "disconnected"
-                log.error(f"Erreur de connexion : {e}")
+        try:
+            self.receive = self.receive_queue.get_nowait()
+        except queue.Empty:
+            pass
             
     
     @staticmethod
-    def connection(HOST,PORT,socket_queue):
+    def connection(HOST,PORT,socket_queue,close_event:threading.Event):
         log.info("connection start : host")
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server_socket.bind((HOST, PORT))
@@ -337,10 +325,47 @@ class Host:
         log.info("connection start finished")
     
     @staticmethod
-    def thread_host(recei , addr):
-        pass
+    def thread_host(receive_queue: queue.Queue, send_queue: queue.Queue, socket_queue: queue.Queue, close_event: threading.Event):
 
+        log.info("wait for connection to be obtained")
+        connection, address, socket_host = socket_queue.get()
+        log.info("connection obtained from 'connection start' process")
 
+        connection.settimeout(0.5)
+        i = 0
+
+        while not close_event.is_set():
+            i += 1
+
+            # receive
+            try:
+                data = connection.recv(1024)
+                if data:
+                    message = data.decode('utf-8')
+                    receive_queue.put(message)
+                    log.debug(f"Received from client: {message}")
+            except socket.timeout:
+                pass
+            except (ConnectionResetError, OSError) as e:
+                log.warning(f"Connection error during recv: {e}")
+                break
+
+            # send
+            try:
+                msg = f"connected {i}".encode('utf-8')
+                connection.sendall(msg)
+            except (ConnectionResetError, OSError) as e:
+                log.warning(f"Connection error during send: {e}")
+                break
+            
+            sleep(1)
+
+        log.info("thread_host terminated")
+        connection.close()
+        socket_host.close()
+
+        
+        
 
 class Join:
     def __init__(self, width, height, game):
@@ -367,6 +392,7 @@ class Join:
     
     def load_buttons(self):
         self.buttons.append(Label(0, (self.height-200)//2, self.width, 200, "Wait for server",50, text_color=(255,255,255),image1="",image2=""))
+        self.buttons.append(Label(0, self.height-100, self.width, 100, "debug : ",20, text_color=(255,255,255),image1="",image2=""))
         self.buttons.append(Label(0, 0, self.width, 200, "Join",128, text_color=(255,255,255),image1="",image2=""))
         self.buttons.append(ButtonIcon(self.width-100,self.height-100,50,50,self.quit))
     
@@ -378,7 +404,9 @@ class Join:
     def draw(self, display:pygame.Surface):
         for i,button in enumerate(self.buttons):
             if(i==0):
-                button.draw(display," : "+self.message)
+                button.draw(display,"."*self.dots)
+            elif(i==1):
+                button.draw(display,self.message)
             else:
                 button.draw(display)
     
@@ -395,7 +423,7 @@ class Join:
             self.message = self.message_queue.get_nowait()
             #log.debug(f"message : {self.message}")
         except queue.Empty:
-            #log.warning(f"no message")
+            #log.debug(f"no message")
             pass
             
     
@@ -419,12 +447,14 @@ class Join:
     
     @staticmethod
     def thread_connection(message_queue: queue.Queue, socket_queue: queue.Queue, stop_event: threading.Event):
-        log.info("wait for connection to be established")
+        log.info("wait for connection to be obtained")
         client_socket: socket.socket = socket_queue.get()
         log.info("connection obtained from 'connection start' process")
         client_socket.settimeout(0.5)  # Timeout pour ne pas bloquer indéfiniment
 
+        i = 0
         while not stop_event.is_set():
+            i += 1
             try:
                 data = client_socket.recv(1024)
                 if data:
@@ -435,6 +465,17 @@ class Join:
             except (ConnectionResetError, OSError) as e:
                 log.warning(f"Connection error: {e}")
                 break
+            
+             # send
+            try:
+                msg = f"connected {i}".encode('utf-8')
+                client_socket.sendall(msg)
+            except (ConnectionResetError, OSError) as e:
+                log.warning(f"Connection error during send: {e}")
+                break
+            
+            sleep(0.5)
+        
         log.info("thread_connection terminated")
         client_socket.close()
 
