@@ -1,16 +1,56 @@
 import socket
+import json
 
-# Configuration du client
-HOST = '127.0.0.1'  # Remplacer par l'IP de la machine A
-PORT = 5000             # Même port que le serveur
+class Client:
+    def __init__(self) -> None:
+        self.UDP_IP = str
+        self.UDP_PORT = int
 
-# Connexion au serveur
-client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-client_socket.connect((HOST, PORT))
-client_socket.sendall(b"Hello from client")
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.connection = False
+    
+    def connected(self)->bool:
+        return self.connection
+    
+    def start(self,ip:str,port:int):
+        self.UDP_IP = ip
+        self.UDP_PORT = port
+        self.sock.connect((self.UDP_IP,self.UDP_PORT))
+        
+        print("connected ✅")
+        self.connection = True
+    
+    def loop(self,data_send:bytes):
+        #send
+        self.sock.sendall(data_send)
+        
+        #receive
+        msg:str = self.sock.recv(1024).decode()
 
-# Réception de la réponse
-response = client_socket.recv(1024)
-print("Réponse du serveur:", response.decode())
+        return msg
 
-client_socket.close()
+    def loopDic(self,dictionary:dict):
+        #convert
+        data = json.dumps(dictionary)
+        data = data.encode()
+        
+        #send
+        self.sock.sendall(data)
+        
+        #receive
+        msg:str = self.sock.recv(1024).decode()
+        data_received:dict = json.loads(msg)
+
+        return data_received
+
+
+if __name__ == "__main__":
+    client = Client()
+    client.start("localhost",5005)
+    
+    i=0
+    while True:
+        msg = f"serv {i}"
+        receive = client.loop(msg.encode())
+        print("send :",msg," receive :",receive)
+        i+=1
