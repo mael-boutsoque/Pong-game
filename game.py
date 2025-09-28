@@ -54,6 +54,10 @@ class Game:
         self.active.draw(self.display)
         pygame.display.flip()
     
+    def switch2mult(self,new_panel,connection:'Server|Client'):
+        self.active = new_panel(self.width, self.height, self,connection)
+        self.active.load()
+    
     def switch_2_menu(self):
         self.active = self.menu
         self.active.load()
@@ -85,3 +89,9 @@ class Game:
     
     def quit(self):
         self.running = False
+
+
+if __name__ == "__main__":
+    game = Game(820,620)
+    #game = Game(1920,1080)
+    game.run()
