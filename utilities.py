@@ -11,6 +11,8 @@ import socket
 import threading
 import queue
 from time import sleep
+
+from pygame.event import Event
 from test_serv import Server
 from test_client import Client
 import socket
@@ -80,6 +82,7 @@ class Pong:
         player_width , player_height = 30,100
         self.player = Player(20,(self.width)//2-player_height,player_width,player_height,(0,self.height),keys=self.keys)
         self.enemy = Enemy(self.width-player_width-20,(self.width)//2-player_height,player_width,player_height,(0,self.height))
+        self.enemy = Enemy_multiplayer(self.width-player_width-20,(self.width)//2-player_height,player_width,player_height,(0,self.height))
         
         self.ball = Ball(self.width//2,self.height//2,5,(0,self.width),(0,self.height))
         self.disponible_powers = [Effect_big,Effect_speed]
@@ -104,13 +107,13 @@ class Pong:
         self.player.events(event)
     
     def run(self):
-        spawn_power = self.ball.run(self.player,self.enemy)
+        spawn_power = self.ball.run(self.player,self.enemy,self.width)
         try:
             effect = choice(self.disponible_powers)
+            if spawn_power and random()>0.5 :
+                self.powers.append(Power(self.ball._x,self.ball._y,effect))
         except:
             return
-        if spawn_power and random()>0.5 :
-            self.powers.append(Power(self.ball._x,self.ball._y,effect))
         
         for index,power in enumerate(self.powers):
             if not power.run(self.player):
@@ -227,10 +230,21 @@ class Parameters:
         
 
 class PongMulti(Pong):
+    def __init__(self, width, height, game):
+        super().__init__(width, height, game)
+        self.disponible_powers = []
+        self.debug:str = ""
+    
     def load(self):
         super().load()
-        label_height = 100
         self.debug_text = Label(0, self.height-100, self.width, 100, "debug : ",20, text_color=(255,255,255),image1="",image2="")
+        self.disponible_powers = []
+    
+    def draw(self, display: pygame.Surface):
+        super().draw(display)
+        self.debug_text.draw(display,self.debug)
+    
+    
 
 class MultiplayerHost(PongMulti):
     def __init__(self, width:int, height:int, game, server:Server):
@@ -255,7 +269,6 @@ class MultiplayerJoin(PongMulti):
         super().__init__(width, height, game)
         self.client = client
         self.disponible_powers = []
-        self.powers2dict : dict = {}
     
     def run(self):
         super().run()
@@ -265,17 +278,7 @@ class MultiplayerJoin(PongMulti):
         pos = data['ball']
         self.ball.set_pos((self.width - pos[0],pos[1]))
         self.player.lifes = data['p2']
-        
-        self.powers2dict = data['pow']
-        #self.power = [Power.from_dict(powerdict,effect_classes) for powerdict in powers2dict]
-    
-    def load(self):
-        super().load()
-        self.disponible_powers = []
-    
-    def draw(self, display: pygame.Surface):
-        super().draw(display)
-        self.debug_text.draw(display,self.powers2dict.__str__())
+
 
 
 class Multiplayer:
@@ -326,7 +329,7 @@ class Host:
     def load(self):
         HOST = '0.0.0.0'
         PORT = 5000
-         #self.server.start(HOST,PORT)
+        self.server.start_threaded(HOST,PORT)
         log.info("host menu loaded")
     
     def load_buttons(self):
@@ -437,7 +440,7 @@ class Join:
     def load(self,ip:str):
         HOST = ip
         PORT = 5000
-        self.client.start(HOST,PORT)
+        self.client.start_threaded(HOST,PORT)
         log.info(f"join menu loaded ip = {HOST}")
     
     def load_buttons(self):
@@ -570,7 +573,7 @@ class Player:
     
     def damage(self,amount=1):
         self.lifes -= amount
-        log.info("damage",amount)
+        log.info(f"damage {amount}")
     
     def add_effect(self,effect):
         log.info(f"add effect : {effect}")
@@ -604,6 +607,7 @@ class Enemy(Player):
         self.lifes = self.lifes0
         self.load_images(images,1)
         
+        
     def event(self,event:pygame.event.Event):
         pass
     def run(self,ball_pos:tuple):
@@ -617,9 +621,26 @@ class Enemy(Player):
         self._y = min(max(y,self._limity[0]),self._limity[1]-self._height)
     
     def draw(self,display:pygame.Surface,ball_pos:tuple):
-        #pygame.draw.rect(display,(255,0,0),pygame.Rect(self._x,self._y,self._width,self._height))
         display.blit(self.sprites[0],(self._x,self._y))
         self.run(ball_pos)
+
+class Enemy_multiplayer(Player):
+    def __init__(self, x, y, width, height, limity: tuple, images: str = "images/buttons/plateforme all2.png"):
+        super().__init__(x, y, width, height, limity, {"up":False,"down":False}, images)
+    def events(self, event: Event):
+        pass
+    def run(self,ball_pos:tuple):
+        pass
+    def move_mult(self,y:int):
+        self._y = min(max(y,self._limity[0]),self._limity[1]-self._height)
+    def draw(self, display: pygame.Surface, ball_pos: tuple):
+        display.blit(self.sprites[self.lifes0-max(0,self.lifes)],(self._x,self._y))
+        self.run(ball_pos)
+        y = display.get_height() - 30
+        for i in range(self.lifes+1):
+            display.blit(self.heart1,(display.get_width()-30*(self.lifes0+1)-10+30*i,y))
+        for j in range(self.lifes+1,self.lifes0+1):
+            display.blit(self.heart0,(display.get_width()-30*(self.lifes0+1)-10+30*j,y))
 
 class Power:
     def __init__(self,x,y,effect,width=22,height=24,logo="images/power0.png") -> None:
@@ -743,7 +764,7 @@ class Ball:
         self._speed = 3
         self.bouncePlayer = 0
     
-    def move(self,player:Player,enemy:Enemy):
+    def move(self,player:Player,enemy:Enemy,screen_width:int):
         collide_player = None
         oldx = self._x
         oldy = self._y
@@ -752,6 +773,8 @@ class Ball:
         
         if self._x < 1 and abs(self._angle)>pi/2:
             player.damage()
+        elif self._x > screen_width -1 :
+            enemy.damage()
         
         players = [player.get_rect(), enemy.get_rect()]
         for player_rect in players:
@@ -774,8 +797,8 @@ class Ball:
         self._angle = (1-2*(self._y >= self._limity[1] or self._y <= self._limity[0]))*self._angle
         return collide_player
     
-    def run(self,player:Player,enemy:Enemy) -> bool:
-        bounce_on = self.move(player,enemy)
+    def run(self,player:Player,enemy:Enemy,screen_width:int) -> bool:
+        bounce_on = self.move(player,enemy,screen_width)
         if bounce_on and self._x > 200:
             return True
         return False
