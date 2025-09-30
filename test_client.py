@@ -1,5 +1,6 @@
 import socket
 import json
+import threading
 
 class Client:
     def __init__(self) -> None:
@@ -20,6 +21,26 @@ class Client:
         print("connected ✅")
         self.connection = True
     
+    def start_threaded(self, ip: str, port: int):
+        thread = threading.Thread(target=self._start_static, args=(ip, port, self.sock, self._connection_done), daemon=True)
+        thread.start()
+    
+    @staticmethod
+    def _start_static(ip:str,port:int,sock:socket.socket,connection_done_func):
+        succes = False
+        while not succes:
+            try:
+                sock.connect((ip,port))
+                succes = True
+            except:
+                pass
+        connection_done_func(sock)
+        
+    def _connection_done(self,sock:socket.socket):
+        self.sock = sock
+        print("connected ✅")
+        self.connection = True
+    
     def loop(self,data_send:bytes):
         #send
         self.sock.sendall(data_send)
@@ -30,6 +51,8 @@ class Client:
         return msg
 
     def loopDic(self,dictionary:dict):
+        if not self.connected() :
+            raise Exception("Not connected")
         #convert
         data = json.dumps(dictionary)
         data = data.encode()

@@ -1,6 +1,6 @@
 import socket
 import json
-
+import threading
 
 class Server:
     def __init__(self) -> None:
@@ -21,6 +21,23 @@ class Server:
         self.sock.listen(5)
 
         self.sock, self.UDP_PORT = self.sock.accept()
+        print(f"connected ✅ sock = {self.sock} , port = {self.UDP_PORT}")
+        self.connection = True
+    
+    def start_threaded(self, ip: str, port: int):
+        thread = threading.Thread(target=self._start_static, args=(ip, port, self.sock, self._connection_done), daemon=True)
+        thread.start()
+    
+    @staticmethod
+    def _start_static(ip:str,port:int,sock:socket.socket,connection_done_func):
+        sock.bind((ip,port))
+        sock.listen(5)
+        sock, UDP_PORT = sock.accept()
+        connection_done_func(sock,UDP_PORT)
+        
+    def _connection_done(self,sock:socket.socket,port:int):
+        self.sock = sock
+        self.UDP_PORT = port
         print(f"connected ✅ sock = {self.sock} , port = {self.UDP_PORT}")
         self.connection = True
     
