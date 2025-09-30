@@ -24,6 +24,7 @@ class Game:
         self.death_screen = DeathScreen(width,height,self)
         self.host = Host(width,height,self)
         self.join = Join(width,height,self)
+        self.select_ip = SelectIp(width,height,self.switch_2_join,self.switch_2_menu)
         
         self.active = self.menu
 
@@ -76,8 +77,11 @@ class Game:
     def switch_2_host(self):
         self.active = self.host
         self.active.load()
-    def switch_2_join(self):
+    def switch_2_join(self,ip:str):
         self.active = self.join
+        self.active.load(ip)
+    def switch_2_selectip(self):
+        self.active = self.select_ip
         self.active.load()
     
     def setkeys(self,keys:dict):

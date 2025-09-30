@@ -13,6 +13,7 @@ import queue
 from time import sleep
 from test_serv import Server
 from test_client import Client
+import socket
 
 #logs
 from logger_config import setup_logger
@@ -36,7 +37,7 @@ class Menu:
         log.info("menu loaded")
     
     def load_buttons(self, start_game_function, launch_parameters_function, start_multiplayer_function, quit_game_function):
-        width = self.width // 2.5
+        width = self.width // 2.2
         height = self.height // 10
         font_size = height
         self.buttons.append(Button((self.width-width)//2, (self.height-height)//2 + (height+30)*0, width, height, "Start Game",font_size, start_game_function,text_color=(153, 153, 255)))
@@ -65,6 +66,7 @@ class Pong:
         self.quit_function = game.switch_2_menu
         self.death_function = game.switch_2_death_screen
         self.keys = game.keys
+        self.powers : list[Power] = []
         self.load()
         self.load_images("images/buttons/bg.png")
     
@@ -103,7 +105,10 @@ class Pong:
     
     def run(self):
         spawn_power = self.ball.run(self.player,self.enemy)
-        effect = choice(self.disponible_powers)
+        try:
+            effect = choice(self.disponible_powers)
+        except:
+            return
         if spawn_power and random()>0.5 :
             self.powers.append(Power(self.ball._x,self.ball._y,effect))
         
@@ -219,35 +224,58 @@ class Parameters:
         file.write(text[:-1])
         file.close()
         log.info("keys file modified")
+        
 
-class MultiplayerHost(Pong):
+class PongMulti(Pong):
+    def load(self):
+        super().load()
+        label_height = 100
+        self.debug_text = Label(0, self.height-100, self.width, 100, "debug : ",20, text_color=(255,255,255),image1="",image2="")
+
+class MultiplayerHost(PongMulti):
     def __init__(self, width:int, height:int, game, server:Server):
         super().__init__(width, height, game)
         self.server = server
     
     def run(self):
         super().run()
+        powers2dict = [power.to_dict() for power in self.powers]
         msg = {'y' : self.player.get_rect().y,
                'ball' : self.ball.get_pos(),
                'p1' : self.player.lifes,
-               'p2' : self.enemy.lifes
+               'p2' : self.enemy.lifes,
+               'pow' : powers2dict
                }
         data = self.server.loopDic(msg)
         self.enemy.move_mult(data['y'])
         
 
-class MultiplayerJoin(Pong):
+class MultiplayerJoin(PongMulti):
     def __init__(self, width:int, height:int, game, client:Client):
         super().__init__(width, height, game)
         self.client = client
+        self.disponible_powers = []
+        self.powers2dict : dict = {}
     
     def run(self):
         super().run()
         msg = {'y':self.player.get_rect().y}
         data = self.client.loopDic(msg)
         self.enemy.move_mult(data['y'])
-        self.ball.set_pos(data['ball'])
+        pos = data['ball']
+        self.ball.set_pos((self.width - pos[0],pos[1]))
         self.player.lifes = data['p2']
+        
+        self.powers2dict = data['pow']
+        #self.power = [Power.from_dict(powerdict,effect_classes) for powerdict in powers2dict]
+    
+    def load(self):
+        super().load()
+        self.disponible_powers = []
+    
+    def draw(self, display: pygame.Surface):
+        super().draw(display)
+        self.debug_text.draw(display,self.powers2dict.__str__())
 
 
 class Multiplayer:
@@ -255,7 +283,7 @@ class Multiplayer:
         self.width = width
         self.height = height
         self.buttons = []
-        self.load_buttons(game.switch_2_menu,game.switch_2_host,game.switch_2_join)
+        self.load_buttons(game.switch_2_menu,game.switch_2_host,game.switch_2_selectip)
     
     def load(self):
         log.info("Multiplayer menu loaded")
@@ -298,7 +326,7 @@ class Host:
     def load(self):
         HOST = '0.0.0.0'
         PORT = 5000
-        self.server.start(HOST,PORT)
+         #self.server.start(HOST,PORT)
         log.info("host menu loaded")
     
     def load_buttons(self):
@@ -306,6 +334,7 @@ class Host:
         self.buttons.append(Label(0, self.height-100, self.width, 100, "debug : ",20, text_color=(255,255,255),image1="",image2=""))
         self.buttons.append(Label(0, 0, self.width, 200, "Host",128, text_color=(255,255,255),image1="",image2=""))
         self.buttons.append(ButtonIcon(self.width-100,self.height-100,50,50,self.quit))
+        self.buttons.append(Label(0, self.height-100, 200, 100, f"IP = {get_ipv4()}",20, text_color=(255,255,255),image1="",image2=""))
     
     def quit(self):
         log.info("quit host")
@@ -332,8 +361,65 @@ class Host:
         
         if self.server.connected():
             self.game.switch2mult(MultiplayerHost,self.server)
+
+
+class SelectIp:
+    def __init__(self,width,height,join_menu,return_home) -> None:
+        self.width = width
+        self.height = height
+        self.join_menu = join_menu
+        self.return_home = return_home
+        self.ip = "127.0.0.1"
+        self.debug = ""
+        self.buttons = []
+        self.load_buttons()
+    
+    def load(self):
+        log.info("Select IP menu loaded")
+    
+    def load_buttons(self):
+        self.buttons.append(Label(0, (self.height-200)//2, self.width, 200, "IP : ",50, text_color=(255,255,255),image1="",image2=""))
+        self.buttons.append(Label(0, self.height-100, self.width, 100, "debug : ",20, text_color=(255,255,255),image1="",image2=""))
+        self.buttons.append(Label(0, 0, self.width, 200, "Select Host IP",128, text_color=(255,255,255),image1="",image2=""))
+        self.buttons.append(ButtonIcon(self.width-100,self.height-100,50,50,self.quit))
+        self.buttons.append(Button(self.width//2-100,self.height-200,200,100,"Join",50,self.start))
+    
+    def start(self):
+        log.info("joining game")
+        self.join_menu(self.ip)
+    
+    def quit(self):
+        log.info("quit join")
+        self.return_home()
+    
+    def draw(self, display:pygame.Surface):
+        for i,button in enumerate(self.buttons):
+            if(i==0):
+                button.draw(display,self.ip or ' ')
+            elif(i==1):
+                button.draw(display,self.debug)
+            else:
+                button.draw(display)
+    
+    def run(self):
+        pass
+    
+    def events(self, event:pygame.event.Event):
+        for button in self.buttons:
+            button.events(event)
         
-        
+        if event.type == pygame.KEYUP:
+            if event.key == 8:
+                self.debug = "delete"
+                self.ip = self.ip[0:len(self.ip)-1]
+            else:
+                if (event.unicode.isdigit() or event.unicode=='.') and len(self.ip)<15:
+                    try:
+                        self.debug = event.unicode + ' ' + str(event.key)
+                        self.ip += event.unicode
+                    except:
+                        self.debug = "error"
+    
 
 class Join:
     def __init__(self, width, height, game):
@@ -348,11 +434,11 @@ class Join:
         self.client = Client()
         self.load_buttons()
     
-    def load(self):
-        HOST = 'localhost'
+    def load(self,ip:str):
+        HOST = ip
         PORT = 5000
         self.client.start(HOST,PORT)
-        log.info("join menu loaded")
+        log.info(f"join menu loaded ip = {HOST}")
     
     def load_buttons(self):
         self.buttons.append(Label(0, (self.height-200)//2, self.width, 200, "Wait for server",50, text_color=(255,255,255),image1="",image2=""))
@@ -566,6 +652,29 @@ class Power:
     
     def get_effect(self) -> "Effect|None":
         return self.effect
+    
+    def to_dict(self):
+        return {
+            "x": self._x,
+            "y": self._y,
+            "width": self._width,
+            "height": self._height,
+            "logo_path": self._logo_path,
+            "effect": str(self.effect.__class__.__name__),
+            "speed": self._speed,
+        }
+    
+    @classmethod
+    def from_dict(cls, data:dict, effect_classes: dict):
+        effect_cls = effect_classes.get(data["effect"])
+        return cls(
+            x=data["x"] + data["width"] // 2,
+            y=data["y"] + data["height"] // 2,
+            effect=effect_cls,
+            width=data["width"],
+            height=data["height"],
+            logo=data["logo_path"]
+        )
 
 
 class Effect:
@@ -620,6 +729,8 @@ class Effect_speed(Effect):
     
     def remove_func(self,player:Player):
         player._speed //= 2
+
+effect_classes = {'Effect_big':Effect_big,'Effect_speed':Effect_speed}
 
 class Ball:
     def __init__(self,x,y,radius,limitx:tuple,limity:tuple):
@@ -682,6 +793,18 @@ class Ball:
     
     def get_BouncesPlayer(self) -> int :
         return self.bouncePlayer
+
+
+def get_ipv4() -> str:
+    try:
+        # crée un socket "factice" pour déterminer l'IP de sortie
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))  # IP publique Google DNS
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
         
 
 class Label:
