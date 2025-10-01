@@ -9,6 +9,7 @@ class Client:
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.connection = False
+        self.stop_event:threading.Event
     
     def connected(self)->bool:
         return self.connection
@@ -22,18 +23,29 @@ class Client:
         self.connection = True
     
     def start_threaded(self, ip: str, port: int):
-        thread = threading.Thread(target=self._start_static, args=(ip, port, self.sock, self._connection_done), daemon=True)
+        self.stop_event = threading.Event()
+        thread = threading.Thread(target=self._start_static, args=(ip, port, self.sock, self._connection_done, self.stop_event), daemon=True)
         thread.start()
     
+    def stop(self):
+        if not self.connection:
+            pass
+            self.stop_event.set()
+        else:
+            raise NotImplementedError()
+    
     @staticmethod
-    def _start_static(ip:str,port:int,sock:socket.socket,connection_done_func):
+    def _start_static(ip:str,port:int,sock:socket.socket,connection_done_func,stop_event:threading.Event):
         succes = False
         while not succes:
             try:
                 sock.connect((ip,port))
                 succes = True
             except:
-                pass
+                if stop_event.is_set():
+                    print("end of the client connection thread")
+                    return
+        
         connection_done_func(sock)
         
     def _connection_done(self,sock:socket.socket):

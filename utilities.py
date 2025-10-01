@@ -3,14 +3,11 @@ from io import TextIOWrapper
 import logging
 from typing import Any
 import pygame
-from math import cos, sin, atan2, pi, log as log10
+from math import cos, sin, pi, log as log10
 from random import random
 from time import monotonic
 from random import choice, random
 import socket
-import threading
-import queue
-from time import sleep
 
 from pygame.event import Event
 from test_serv import Server
@@ -82,7 +79,7 @@ class Pong:
         player_width , player_height = 30,100
         self.player = Player(20,(self.width)//2-player_height,player_width,player_height,(0,self.height),keys=self.keys)
         self.enemy = Enemy(self.width-player_width-20,(self.width)//2-player_height,player_width,player_height,(0,self.height))
-        self.enemy = Enemy_multiplayer(self.width-player_width-20,(self.width)//2-player_height,player_width,player_height,(0,self.height))
+        #self.enemy = Enemy_multiplayer(self.width-player_width-20,(self.width)//2-player_height,player_width,player_height,(0,self.height))
         
         self.ball = Ball(self.width//2,self.height//2,5,(0,self.width),(0,self.height))
         self.disponible_powers = [Effect_big,Effect_speed]
@@ -340,6 +337,7 @@ class Host:
         self.buttons.append(Label(0, self.height-100, 200, 100, f"IP = {get_ipv4()}",20, text_color=(255,255,255),image1="",image2=""))
     
     def quit(self):
+        self.server.stop()
         log.info("quit host")
         self.return_home()
     
@@ -450,6 +448,7 @@ class Join:
         self.buttons.append(ButtonIcon(self.width-100,self.height-100,50,50,self.quit))
     
     def quit(self):
+        self.client.stop()
         log.info("quit join")
         self.return_home()
     

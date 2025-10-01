@@ -28,12 +28,19 @@ class Server:
         thread = threading.Thread(target=self._start_static, args=(ip, port, self.sock, self._connection_done), daemon=True)
         thread.start()
     
+    def stop(self):
+        self.sock.close()
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    
     @staticmethod
     def _start_static(ip:str,port:int,sock:socket.socket,connection_done_func):
-        sock.bind((ip,port))
-        sock.listen(5)
-        sock, UDP_PORT = sock.accept()
-        connection_done_func(sock,UDP_PORT)
+        try:
+            sock.bind((ip,port))
+            sock.listen(5)
+            sock, UDP_PORT = sock.accept()
+            connection_done_func(sock,UDP_PORT)
+        except OSError as e:
+            print(f"end of the server connection thread {e}")
         
     def _connection_done(self,sock:socket.socket,port:int):
         self.sock = sock
